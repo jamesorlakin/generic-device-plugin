@@ -171,7 +171,7 @@ func TestDiscoverUSB(t *testing.T) {
 					deviceSpecs: []*v1beta1.DeviceSpec{
 						{
 							ContainerPath: "/dev/null",
-							HostPath:      "/dev/bus/usb/003/022",
+							HostPath:      "/dev/null",
 						},
 					},
 				},

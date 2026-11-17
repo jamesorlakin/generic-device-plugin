@@ -281,6 +281,8 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 				containerPath := spec.ContainerPath
 				if containerPath == "" {
 					containerPath = hostPath
+				} else {
+					hostPath = containerPath
 				}
 				_ = level.Debug(gp.logger).Log("msg", "USB device match", "usbdevice", fmt.Sprintf("%v:%v", spec.Vendor.String(), spec.Product.String()), "hostPath", hostPath, "containerPath", containerPath)
 				paths = append(paths, usbDevicePath{hostPath: hostPath, containerPath: containerPath})
@@ -312,4 +314,5 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 	}
 	return devices, nil
 }
+
 
