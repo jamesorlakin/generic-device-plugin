@@ -49,6 +49,9 @@ type USBSpec struct {
 	Product USBID `json:"product"`
 	// Serial is the serial number of the device to match on.
 	Serial string `json:"serial"`
+	// ContainerPath optionally overrides the container-visible path for the matched USB device.
+	// This is useful for avoiding a changing `/dev/bus/usb/...` path across restarts.
+	ContainerPath string `json:"containerPath,omitempty"`
 }
 
 // USBID is a representation of a platform or vendor ID under the USB standard (see gousb.ID)
@@ -270,8 +273,34 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 				_ = level.Debug(gp.logger).Log("msg", "no USB devices found attached to system")
 			}
 			for _, match := range matches {
-				_ = level.Debug(gp.logger).Log("msg", "USB device match", "usbdevice", fmt.Sprintf("%v:%v", dev.Vendor.String(), dev.Product.String()), "path", match.BusPath())
-				paths = append(paths, match.BusPath())
+				hostPath := match.BusPath()
+				containerPath := hostPath
+				if dev.ContainerPath != "" {
+					containerPath = dev.ContainerPath
+				}
+				_ = level.Debug(gp.logger).Log("msg", "USB device match", "usbdevice", fmt.Sprintf("%v:%v", dev.Vendor.String(), dev.Product.String()), "hostPath", hostPath, "containerPath", containerPath)
+				paths = append(paths, hostPath)
+				if len(paths) > 0 {
+					for j := uint(0); j < group.Count; j++ {
+						h := sha1.New()
+						h.Write([]byte(strconv.FormatUint(uint64(j), 10)))
+						d := device{
+							Device: &v1beta1.Device{
+								Health: v1beta1.Healthy,
+							},
+						}
+						for _, path := range paths {
+							d.deviceSpecs = append(d.deviceSpecs, &v1beta1.DeviceSpec{
+								HostPath:      path,
+								ContainerPath: containerPath,
+								Permissions:   "rw",
+							})
+							h.Write([]byte(path))
+						}
+						d.ID = fmt.Sprintf("%x", h.Sum(nil))
+						devices = append(devices, d)
+					}
+				}
 			}
 		}
 		if len(paths) > 0 {
@@ -298,3 +327,55 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 	}
 	return devices, nil
 }
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                
+
+                

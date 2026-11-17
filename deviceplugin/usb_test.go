@@ -144,6 +144,40 @@ func TestDiscoverUSB(t *testing.T) {
 			},
 			err: nil,
 		},
+		{
+			name: "container-path-override",
+			ds: &DeviceSpec{
+				Name: "usb-override",
+				Groups: []*Group{
+					{
+						USBSpecs: []*USBSpec{
+							{
+								Vendor:        0x1050,
+								Product:       0x0407,
+								ContainerPath: "/dev/null",
+							},
+						},
+					},
+				},
+			},
+			fs: fstest.MapFS{
+				"sys/bus/usb/devices/3-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/idProduct": {Data: []byte("0407\n")},
+				"sys/bus/usb/devices/3-4/busnum":    {Data: []byte("3\n")},
+				"sys/bus/usb/devices/3-4/devnum":    {Data: []byte("22\n")},
+			},
+			out: []device{
+				{
+					deviceSpecs: []*v1beta1.DeviceSpec{
+						{
+							ContainerPath: "/dev/null",
+							HostPath:      "/dev/bus/usb/003/022",
+						},
+					},
+				},
+			},
+			err: nil,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.ds.Default()
@@ -186,3 +220,4 @@ func TestDiscoverUSB(t *testing.T) {
 		})
 	}
 }
+

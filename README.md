@@ -1,105 +1,126 @@
-# Kubernetes Generic Device Plugin
+// Copyright 2020 the generic-device-plugin authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-The generic-device-plugin enables allocating generic Linux devices, such as serial devices, the FUSE device, or video cameras, to Kubernetes Pods.
-This allows devices that don't require special drivers to be advertised to the cluster and scheduled, enabling various use-cases, e.g.:
-* accessing video and sound devices;
-* running IoT applications, which often require access to hardware devices; and
-* mounting FUSE filesysems without `privileged`.
+package main
 
-[![Build Status](https://github.com/squat/generic-device-plugin/workflows/CI/badge.svg)](https://github.com/squat/generic-device-plugin/actions?query=workflow%3ACI)
-[![Built with Nix](https://img.shields.io/static/v1?logo=nixos&logoColor=white&label=&message=Built%20with%20Nix&color=41439a)](https://builtwithnix.org)
+import (
+	"fmt"
+	"strings"
 
-## Overview
+	"github.com/ghodss/yaml"
+	"github.com/mitchellh/mapstructure"
+	flag "github.com/spf13/pflag"
+	"github.com/spf13/viper"
+	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 
-The generic-device-plugin can be configured to discover and allocate any desired device using the `--device` flag.
-For example, to advertise all video devices to the cluster, the following flag could be given:
-```
---device='{"name": "video", "groups": [{"paths": [{"path": "/dev/video0"}]}]}'
-```
+	"github.com/squat/generic-device-plugin/deviceplugin"
+)
 
-Now, Pods that require a video capture device, such as an object detection service, could request to be allocated one using the Kubernetes Pod `resources` field:
-```yaml
-resources:
-  limits:
-    devic.es/video: 1
-```
+const defaultDomain = "devic.es"
 
-The `--device` flag can be provided multiple times to allow the plugin to discover and allocate different types of resources.
+// initConfig defines config flags, config file, and envs
+func initConfig() error {
+	cfgFile := flag.String("config", "", "Path to the config file.")
+	flag.String("domain", defaultDomain, "The domain to use when when declaring devices.")
+	flag.StringArray("device", nil, `The devices to expose. This flag can be repeated to specify multiple device types.
+Multiple paths can be given for each type. Paths can be globs.
+Should be provided in the form:
+{"name": "<name>", "groups": [(device definitions)], "count": <count>]}
+The device definition can be either a path to a device file or a USB device. You cannot define both in the same group.
+For device files, use something like: {"paths": [{"path": "<path-1>", "mountPath": "<mount-path-1>"},{"path": "<path-2>", "mount-path": "<mount-path-2>"}]}
+For USB devices, use something like: {"usb": [{"vendor": "1209", "product": "000F"}, {"vendor": "1209", "product": "000F", "serial": "00000001"}, {"vendor": "1209", "product": "000F", "containerPath": "/dev/null"}]}
+For example, to expose serial devices with different names: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyUSB*"}]}, {"paths": [{"path": "/dev/ttyACM*"}]}]}
+The device flag can specify lists of devices that should be grouped and mounted into a container together as one single meta-device.
+For example, to allocate and mount an audio capture device: {"name": "capture", "groups": [{"paths": [{"path": "/dev/snd/pcmC0D0c"}, {"path": "/dev/snd/controlC0"}]}]}
+For example, to expose a CH340 serial converter: {"name": "ch340", "groups": [{"usb": [{"vendor": "1a86", "product": "7523"}]}]}
+A "count" can be specified to allow a discovered device group to be scheduled multiple times.
+For example, to permit allocation of the FUSE device 10 times: {"name": "fuse", "groups": [{"count": 10, "paths": [{"path": "/dev/fuse"}]}]}
+Note: if omitted, "count" is assumed to be 1
+An "optional" field can be specified for individual paths to allow containers to start even when some devices are missing.
+For example, to expose serial devices that may or may not be present: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyS0", "optional": true}, {"path": "/dev/ttyUSB0", "optional": true}][...]}
+If mountPath is a directory, the device will be mounted to the directory with the name of the device.
+For example, to expose the serial devices to the /dev/serial directory: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyUSB*", "mountPath": "/dev/serial/"}]}]}`)
+	flag.String("plugin-directory", v1beta1.DevicePluginPath, "The directory in which to create plugin sockets.")
+	flag.String("log-level", logLevelInfo, fmt.Sprintf("Log level to use. Possible values: %s", availableLogLevels))
+	flag.String("listen", ":8080", "The address at which to listen for health and metrics.")
+	flag.Bool("version", false, "Print version and exit")
 
-## Getting Started
+	flag.Parse()
+	if err := viper.BindPFlags(flag.CommandLine); err != nil {
+		return fmt.Errorf("failed to bind config: %w", err)
+	}
 
-To install the generic-device-plugin, choose what devices should be discovered and deploy the included DaemonSet:
+	if *cfgFile != "" {
+		viper.SetConfigFile(*cfgFile)
+	} else {
+		viper.SetConfigName("config")
+		viper.SetConfigType("yaml")
+		viper.AddConfigPath("/etc/generic-device-plugin/")
+		viper.AddConfigPath(".")
+	}
 
-```shell
-kubectl apply -f https://raw.githubusercontent.com/squat/generic-device-plugin/main/manifests/generic-device-plugin.yaml
-```
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 
-*Note*: the example manifest included in this repository discovers serial devices, the `/dev/video0` device, the `/dev/fuse` device, sound devices, and sound capture devices.
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// Config file not found; ignore error
+		} else {
+			// Config file was found but another error was produced
+			return fmt.Errorf("failed to read config file: %w", err)
+		}
+	}
 
-Now, deploy a workload that requests one of the newly discovered resources.
-For example, the following script could be used to run a Pod that creates an MJPEG stream from a video device on the node:
+	viper.RegisterAlias("devices", "device")
 
-```shell
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: mjpeg
-  labels:
-    app.kubernetes.io/name: mjpeg
-spec:
-  containers:
-  - name: kceu
-    image: squat/kubeconeu2019
-    command:
-    - /cam2ip
-    args:
-    - --bind-addr=:8080
-    ports:
-    - containerPort: 8080
-      name: http
-    resources:
-      limits:
-        devic.es/video: 1
-EOF
-```
+	return nil
+}
 
-This application could then be accessed by port-forwarding to the Pod:
+// getConfiguredDevices returns a list of configured devices
+func getConfiguredDevices() ([]*deviceplugin.DeviceSpec, error) {
+	switch raw := viper.Get("device").(type) {
+	case []string:
+		// Assign deviceSpecs from flag
+		deviceSpecs := make([]*deviceplugin.DeviceSpec, len(raw))
+		for i, data := range raw {
+			if err := yaml.Unmarshal([]byte(data), &deviceSpecs[i]); err != nil {
+				return nil, fmt.Errorf("failed to parse device %q: %w", data, err)
+			}
+		}
+		return deviceSpecs, nil
+	case []interface{}:
+		// Assign deviceSpecs from config
+		deviceSpecs := make([]*deviceplugin.DeviceSpec, len(raw))
+		for i, data := range raw {
+			decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+				Result:  &deviceSpecs[i],
+				TagName: "json",
+				DecodeHook: mapstructure.ComposeDecodeHookFunc(
+					deviceplugin.ToUSBIDHookFunc,
+				),
+			})
+			if err != nil {
+				return nil, err
+			}
 
-```shell
-kubectl port-forward mjpeg http
-```
+			if err := decoder.Decode(data); err != nil {
+				return nil, fmt.Errorf("failed to decode device data %q: %w", data, err)
+			}
+		}
+		return deviceSpecs, nil
+	default:
+		return nil, fmt.Errorf("failed to decode devices: unexpected type: %T", raw)
+	}
+}
 
-Now, the MJPEG stream could be opened by pointing a browser to [http://localhost:8080/mjpeg](http://localhost:8080/mjpeg).
-
-
-## Usage
-
-[embedmd]:# (help.txt)
-```txt
-Usage of generic-device-plugin:
-      --config string             Path to the config file.
-      --device stringArray        The devices to expose. This flag can be repeated to specify multiple device types.
-                                  Multiple paths can be given for each type. Paths can be globs.
-                                  Should be provided in the form:
-                                  {"name": "<name>", "groups": [(device definitions)], "count": <count>}]}
-                                  The device definition can be either a path to a device file or a USB device. You cannot define both in the same group.
-                                  For device files, use something like: {"paths": [{"path": "<path-1>", "mountPath": "<mount-path-1>"},{"path": "<path-2>", "mountPath": "<mount-path-2>"}]}
-                                  For USB devices, use something like: {"usb": [{"vendor": "1209", "product": "000F"}, {"vendor": "1209", "product": "000F", "serial": "00000001"}]}
-                                  For example, to expose serial devices with different names: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyUSB*"}]}, {"paths": [{"path": "/dev/ttyACM*"}]}]}
-                                  The device flag can specify lists of devices that should be grouped and mounted into a container together as one single meta-device.
-                                  For example, to allocate and mount an audio capture device: {"name": "capture", "groups": [{"paths": [{"path": "/dev/snd/pcmC0D0c"}, {"path": "/dev/snd/controlC0"}]}]}
-                                  For example, to expose a CH340 serial converter: {"name": "ch340", "groups": [{"usb": [{"vendor": "1a86", "product": "7523"}]}]}
-                                  A "count" can be specified to allow a discovered device group to be scheduled multiple times.
-                                  For example, to permit allocation of the FUSE device 10 times: {"name": "fuse", "groups": [{"count": 10, "paths": [{"path": "/dev/fuse"}]}]}
-                                  Note: if omitted, "count" is assumed to be 1
-                                  An "optional" field can be specified for individual paths to allow containers to start even when some devices are missing.
-                                  For example, to expose serial devices that may or may not be present: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyS0", "optional": true}, {"path": "/dev/ttyUSB0", "optional": true}]}]}
-                                  If mountPath is a directory, the device will be mounted to the directory with the name of the device.
-                                  For example, to expose the serial devices to the /dev/serial directory: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyUSB*", "mountPath": "/dev/serial/"}]}]}
-      --domain string             The domain to use when when declaring devices. (default "devic.es")
-      --listen string             The address at which to listen for health and metrics. (default ":8080")
-      --log-level string          Log level to use. Possible values: all, debug, info, warn, error, none (default "info")
-      --plugin-directory string   The directory in which to create plugin sockets. (default "/var/lib/kubelet/device-plugins/")
-      --version                   Print version and exit
-```
