@@ -50,7 +50,6 @@ type USBSpec struct {
 	// Serial is the serial number of the device to match on.
 	Serial string `json:"serial"`
 	// ContainerPath optionally overrides the container-visible path for the matched USB device.
-	// This is useful for avoiding a changing `/dev/bus/usb/...` path across restarts.
 	ContainerPath string `json:"containerPath,omitempty"`
 }
 
@@ -252,6 +251,11 @@ func searchUSBDevices(devices *[]usbDevice, vendor USBID, product USBID, serial 
 	return
 }
 
+type usbDevicePath struct {
+	hostPath      string
+	containerPath string
+}
+
 func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 	usbDevs, err := enumerateUSBDevices(gp.fs, usbDevicesDir)
 	for _, usbDev := range usbDevs {
@@ -259,13 +263,13 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 	}
 
 	for _, group := range gp.ds.Groups {
-		var paths []string
+		var paths []usbDevicePath
 		if err != nil {
 			_ = level.Warn(gp.logger).Log("msg", fmt.Sprintf("failed to enumerate usb devices: %v", err))
 			return devices, nil
 		}
-		for _, dev := range group.USBSpecs {
-			matches, err := searchUSBDevices(&usbDevs, dev.Vendor, dev.Product, dev.Serial)
+		for _, spec := range group.USBSpecs {
+			matches, err := searchUSBDevices(&usbDevs, spec.Vendor, spec.Product, spec.Serial)
 			if err != nil {
 				return nil, err
 			}
@@ -274,108 +278,38 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 			}
 			for _, match := range matches {
 				hostPath := match.BusPath()
-				containerPath := hostPath
-				if dev.ContainerPath != "" {
-					containerPath = dev.ContainerPath
+				containerPath := spec.ContainerPath
+				if containerPath == "" {
+					containerPath = hostPath
 				}
-				_ = level.Debug(gp.logger).Log("msg", "USB device match", "usbdevice", fmt.Sprintf("%v:%v", dev.Vendor.String(), dev.Product.String()), "hostPath", hostPath, "containerPath", containerPath)
-				paths = append(paths, hostPath)
-				if len(paths) > 0 {
-					for j := uint(0); j < group.Count; j++ {
-						h := sha1.New()
-						h.Write([]byte(strconv.FormatUint(uint64(j), 10)))
-						d := device{
-							Device: &v1beta1.Device{
-								Health: v1beta1.Healthy,
-							},
-						}
-						for _, path := range paths {
-							d.deviceSpecs = append(d.deviceSpecs, &v1beta1.DeviceSpec{
-								HostPath:      path,
-								ContainerPath: containerPath,
-								Permissions:   "rw",
-							})
-							h.Write([]byte(path))
-						}
-						d.ID = fmt.Sprintf("%x", h.Sum(nil))
-						devices = append(devices, d)
-					}
-				}
+				_ = level.Debug(gp.logger).Log("msg", "USB device match", "usbdevice", fmt.Sprintf("%v:%v", spec.Vendor.String(), spec.Product.String()), "hostPath", hostPath, "containerPath", containerPath)
+				paths = append(paths, usbDevicePath{hostPath: hostPath, containerPath: containerPath})
 			}
 		}
-		if len(paths) > 0 {
-			for j := uint(0); j < group.Count; j++ {
-				h := sha1.New()
-				h.Write([]byte(strconv.FormatUint(uint64(j), 10)))
-				d := device{
-					Device: &v1beta1.Device{
-						Health: v1beta1.Healthy,
-					},
-				}
-				for _, path := range paths {
-					d.deviceSpecs = append(d.deviceSpecs, &v1beta1.DeviceSpec{
-						HostPath:      path,
-						ContainerPath: path,
-						Permissions:   "rw",
-					})
-					h.Write([]byte(path))
-				}
-				d.ID = fmt.Sprintf("%x", h.Sum(nil))
-				devices = append(devices, d)
+		if len(paths) == 0 {
+			continue
+		}
+
+		for j := uint(0); j < group.Count; j++ {
+			h := sha1.New()
+			h.Write([]byte(strconv.FormatUint(uint64(j), 10)))
+			d := device{
+				Device: &v1beta1.Device{
+					Health: v1beta1.Healthy,
+				},
 			}
+			for _, path := range paths {
+				d.deviceSpecs = append(d.deviceSpecs, &v1beta1.DeviceSpec{
+					HostPath:      path.hostPath,
+					ContainerPath: path.containerPath,
+					Permissions:   "rw",
+				})
+				h.Write([]byte(path.hostPath))
+			}
+			d.ID = fmt.Sprintf("%x", h.Sum(nil))
+			devices = append(devices, d)
 		}
 	}
 	return devices, nil
 }
 
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
-
-                
