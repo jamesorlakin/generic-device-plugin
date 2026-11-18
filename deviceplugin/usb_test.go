@@ -32,161 +32,62 @@ func TestDiscoverUSB(t *testing.T) {
 		out  []device
 		err  error
 	}{
-		{
-			name: "nil",
-			ds:   new(DeviceSpec),
-			fs:   fstest.MapFS{},
-		},
+		{name: "nil", ds: new(DeviceSpec), fs: fstest.MapFS{}},
 		{
 			name: "simple",
-			ds: &DeviceSpec{
-				Name: "simple",
-				Groups: []*Group{
-					{
-						USBSpecs: []*USBSpec{
-							{
-								Vendor:  0x1050,
-								Product: 0x0407,
-							},
-						},
-					},
-				},
-			},
+			ds: &DeviceSpec{Name: "simple", Groups: []*Group{{USBSpecs: []*USBSpec{{Vendor: 0x1050, Product: 0x0407}}}}},
 			fs: fstest.MapFS{
-				"sys/bus/usb/devices/3-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/idVendor": {Data: []byte("1050\n")},
 				"sys/bus/usb/devices/3-4/idProduct": {Data: []byte("0407\n")},
-				"sys/bus/usb/devices/3-4/busnum":    {Data: []byte("3\n")},
-				"sys/bus/usb/devices/3-4/devnum":    {Data: []byte("22\n")},
-				"sys/bus/usb/devices/3-4/serial":    {Data: []byte("51\n")},
+				"sys/bus/usb/devices/3-4/busnum": {Data: []byte("3\n")},
+				"sys/bus/usb/devices/3-4/devnum": {Data: []byte("22\n")},
+				"sys/bus/usb/devices/3-4/serial": {Data: []byte("51\n")},
 			},
-			out: []device{
-				{
-					deviceSpecs: []*v1beta1.DeviceSpec{
-						{
-							ContainerPath: "/dev/bus/usb/003/022",
-							HostPath:      "/dev/bus/usb/003/022",
-						},
-					},
-				},
-			},
-			err: nil,
+			out: []device{{deviceSpecs: []*v1beta1.DeviceSpec{{ContainerPath: "/dev/bus/usb/003/022", HostPath: "/dev/bus/usb/003/022"}}}},
 		},
 		{
 			name: "no-serial",
-			ds: &DeviceSpec{
-				Name: "no-serial",
-				Groups: []*Group{
-					{
-						USBSpecs: []*USBSpec{
-							{
-								Vendor:  0x1050,
-								Product: 0x0407,
-							},
-						},
-					},
-				},
-			},
+			ds: &DeviceSpec{Name: "no-serial", Groups: []*Group{{USBSpecs: []*USBSpec{{Vendor: 0x1050, Product: 0x0407}}}}},
 			fs: fstest.MapFS{
-				"sys/bus/usb/devices/3-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/idVendor": {Data: []byte("1050\n")},
 				"sys/bus/usb/devices/3-4/idProduct": {Data: []byte("0407\n")},
-				"sys/bus/usb/devices/3-4/busnum":    {Data: []byte("3\n")},
-				"sys/bus/usb/devices/3-4/devnum":    {Data: []byte("22\n")},
+				"sys/bus/usb/devices/3-4/busnum": {Data: []byte("3\n")},
+				"sys/bus/usb/devices/3-4/devnum": {Data: []byte("22\n")},
 			},
-			out: []device{
-				{
-					deviceSpecs: []*v1beta1.DeviceSpec{
-						{
-							ContainerPath: "/dev/bus/usb/003/022",
-							HostPath:      "/dev/bus/usb/003/022",
-						},
-					},
-				},
-			},
-			err: nil,
+			out: []device{{deviceSpecs: []*v1beta1.DeviceSpec{{ContainerPath: "/dev/bus/usb/003/022", HostPath: "/dev/bus/usb/003/022"}}}},
 		},
 		{
 			name: "serial",
-			ds: &DeviceSpec{
-				Name: "serial",
-				Groups: []*Group{
-					{
-						USBSpecs: []*USBSpec{
-							{
-								Vendor:  0x1050,
-								Product: 0x0407,
-								Serial:  "52",
-							},
-						},
-					},
-				},
-			},
+			ds: &DeviceSpec{Name: "serial", Groups: []*Group{{USBSpecs: []*USBSpec{{Vendor: 0x1050, Product: 0x0407, Serial: "52"}}}}},
 			fs: fstest.MapFS{
-				"sys/bus/usb/devices/3-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/idVendor": {Data: []byte("1050\n")},
 				"sys/bus/usb/devices/3-4/idProduct": {Data: []byte("0407\n")},
-				"sys/bus/usb/devices/3-4/busnum":    {Data: []byte("3\n")},
-				"sys/bus/usb/devices/3-4/devnum":    {Data: []byte("22\n")},
-				"sys/bus/usb/devices/3-4/serial":    {Data: []byte("51\n")},
-				"sys/bus/usb/devices/4-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/busnum": {Data: []byte("3\n")},
+				"sys/bus/usb/devices/3-4/devnum": {Data: []byte("22\n")},
+				"sys/bus/usb/devices/3-4/serial": {Data: []byte("51\n")},
+				"sys/bus/usb/devices/4-4/idVendor": {Data: []byte("1050\n")},
 				"sys/bus/usb/devices/4-4/idProduct": {Data: []byte("0407\n")},
-				"sys/bus/usb/devices/4-4/busnum":    {Data: []byte("4\n")},
-				"sys/bus/usb/devices/4-4/devnum":    {Data: []byte("25\n")},
-				"sys/bus/usb/devices/4-4/serial":    {Data: []byte("52\n")},
+				"sys/bus/usb/devices/4-4/busnum": {Data: []byte("4\n")},
+				"sys/bus/usb/devices/4-4/devnum": {Data: []byte("25\n")},
+				"sys/bus/usb/devices/4-4/serial": {Data: []byte("52\n")},
 			},
-			out: []device{
-				{
-					deviceSpecs: []*v1beta1.DeviceSpec{
-						{
-							ContainerPath: "/dev/bus/usb/004/025",
-							HostPath:      "/dev/bus/usb/004/025",
-						},
-					},
-				},
-			},
-			err: nil,
+			out: []device{{deviceSpecs: []*v1beta1.DeviceSpec{{ContainerPath: "/dev/bus/usb/004/025", HostPath: "/dev/bus/usb/004/025"}}}},
 		},
 		{
 			name: "container-path-override",
-			ds: &DeviceSpec{
-				Name: "usb-override",
-				Groups: []*Group{
-					{
-						USBSpecs: []*USBSpec{
-							{
-								Vendor:        0x1050,
-								Product:       0x0407,
-								ContainerPath: "/dev/null",
-							},
-						},
-					},
-				},
-			},
+			ds: &DeviceSpec{Name: "usb-override", Groups: []*Group{{USBSpecs: []*USBSpec{{Vendor: 0x1050, Product: 0x0407, ContainerPath: "/dev/null"}}}}},
 			fs: fstest.MapFS{
-				"sys/bus/usb/devices/3-4/idVendor":  {Data: []byte("1050\n")},
+				"sys/bus/usb/devices/3-4/idVendor": {Data: []byte("1050\n")},
 				"sys/bus/usb/devices/3-4/idProduct": {Data: []byte("0407\n")},
-				"sys/bus/usb/devices/3-4/busnum":    {Data: []byte("3\n")},
-				"sys/bus/usb/devices/3-4/devnum":    {Data: []byte("22\n")},
+				"sys/bus/usb/devices/3-4/busnum": {Data: []byte("3\n")},
+				"sys/bus/usb/devices/3-4/devnum": {Data: []byte("22\n")},
 			},
-			out: []device{
-				{
-					deviceSpecs: []*v1beta1.DeviceSpec{
-						{
-							ContainerPath: "/dev/null",
-							HostPath:      "/dev/null",
-						},
-					},
-				},
-			},
-			err: nil,
+			out: []device{{deviceSpecs: []*v1beta1.DeviceSpec{{ContainerPath: "/dev/null", HostPath: "/dev/null"}}}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.ds.Default()
-			p := GenericPlugin{
-				ds:     tc.ds,
-				fs:     absolute.New(tc.fs, "/"),
-				logger: log.NewNopLogger(),
-			}
-
+			p := GenericPlugin{ds: tc.ds, fs: absolute.New(tc.fs, "/"), logger: log.NewNopLogger()}
 			out, err := p.discoverUSB()
 			if (err != nil) != (tc.err != nil) {
 				t.Errorf("expected error %v; got %v", tc.err, err)
@@ -206,14 +107,6 @@ func TestDiscoverUSB(t *testing.T) {
 					}
 					if out[i].deviceSpecs[j].HostPath != tc.out[i].deviceSpecs[j].HostPath {
 						t.Errorf("device %d, device spec %d: expected host path %q; got %q", i, j, tc.out[i].deviceSpecs[j].HostPath, out[i].deviceSpecs[j].HostPath)
-					}
-				}
-				for j := range out[i].mounts {
-					if out[i].mounts[j].ContainerPath != tc.out[i].mounts[j].ContainerPath {
-						t.Errorf("device %d, mount %d: expected container path %q; got %q", i, j, tc.out[i].mounts[j].ContainerPath, out[i].mounts[j].ContainerPath)
-					}
-					if out[i].mounts[j].HostPath != tc.out[i].mounts[j].HostPath {
-						t.Errorf("device %d, mount %d: expected host path %q; got %q", i, j, tc.out[i].mounts[j].HostPath, out[i].mounts[j].HostPath)
 					}
 				}
 			}

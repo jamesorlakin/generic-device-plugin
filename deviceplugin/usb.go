@@ -49,7 +49,7 @@ type USBSpec struct {
 	Product USBID `json:"product"`
 	// Serial is the serial number of the device to match on.
 	Serial string `json:"serial"`
-	// ContainerPath optionally overrides the container-visible path for the matched USB device.
+	// ContainerPath optionally overrides both the host and container paths for a matched USB device.
 	ContainerPath string `json:"containerPath,omitempty"`
 }
 
@@ -96,15 +96,10 @@ func ToUSBIDHookFunc(f, t reflect.Type, data interface{}) (interface{}, error) {
 
 // usbDevice represents a physical, tangible USB device.
 type usbDevice struct {
-	// Vendor is the USB Vendor ID of the device.
 	Vendor USBID `json:"vendor"`
-	// Product is the USB Product ID of the device.
 	Product USBID `json:"product"`
-	// Bus is the physical USB bus this device is located at.
 	Bus uint16 `json:"bus"`
-	// BusDevice is the location of the device on the Bus.
 	BusDevice uint16 `json:"busdev"`
-	// Serial is the serial number of the device.
 	Serial string `json:"serial"`
 }
 
@@ -113,24 +108,16 @@ func (dev *usbDevice) BusPath() (path string) {
 	return fmt.Sprintf(usbDevBus, dev.Bus, dev.BusDevice)
 }
 
-// readFileToUint16 reads the file at the given path, then returns a representation of that file as uint16.
-// Ignores newlines.
-// Returns an error if the file could not be read, or parsed as uint16.
 func readFileToUint16(fsys fs.FS, path string) (out uint16, err error) {
 	bytes, err := fs.ReadFile(fsys, path)
 	if err != nil {
-		// We can't read this file for some reason
 		return out, err
 	}
-	// To be safe, strip out newlines
 	dataStr := strings.ReplaceAll(string(bytes), "\n", "")
-
-	// then attempt to parse as uint16.
 	dAsInt, err := strconv.ParseUint(dataStr, 16, 16)
 	if err != nil {
 		return out, fmt.Errorf("malformed device data %q: %w", dataStr, err)
 	}
-	// Potential for overflowing, but presume we know what we're doing.
 	return uint16(dAsInt), nil
 }
 
@@ -145,24 +132,16 @@ func resolveSymlinkToDir(fsys fs.FS, path string) (absolutePath string, err erro
 	return path, nil
 }
 
-// queryUSBDeviceCharacteristicsByDirectory scans the given directory for information regarding the given USB device,
-// then returns a pointer to a new usbDevice if information is found.
-// Safe to presume that result is set if err is nil.
 func queryUSBDeviceCharacteristicsByDirectory(fsys fs.FS, path string) (result *usbDevice, err error) {
-	// Test if symlink needs to be followed.
 	path, err = resolveSymlinkToDir(fsys, path)
-
 	if err != nil {
 		return result, err
 	}
 
-	// Try to find the vendor ID file inside this device - this is a good indication that we're dealing with a device, not a bus.
 	vnd, err := readFileToUint16(fsys, filepath.Join(path, usbDevicesDirVendorIDFile))
 	if err != nil {
-		// We can't read the vendor file for some reason, it probably doesn't exist.
 		return result, err
 	}
-
 	prd, err := readFileToUint16(fsys, filepath.Join(path, usbDevicesDirProductIDFile))
 	if err != nil {
 		return result, err
@@ -177,7 +156,6 @@ func queryUSBDeviceCharacteristicsByDirectory(fsys fs.FS, path string) (result *
 		serial = strings.TrimSuffix(string(serBytes), "\n")
 	}
 
-	// The following two calls shouldn't fail if the above two exist and are readable.
 	bus, err := readFileToUint16(fsys, filepath.Join(path, usbDevicesDirBusFile))
 	if err != nil {
 		return result, err
@@ -187,43 +165,33 @@ func queryUSBDeviceCharacteristicsByDirectory(fsys fs.FS, path string) (result *
 		return result, err
 	}
 
-	res := usbDevice{
+	return &usbDevice{
 		Vendor:    USBID(vnd),
 		Product:   USBID(prd),
 		Bus:       bus,
 		BusDevice: busLoc,
 		Serial:    serial,
-	}
-	return &res, nil
+	}, nil
 }
 
 // enumerateUSBDevices rapidly scans the OS system bus for attached USB devices.
-// Pure Go; does not require external linking.
 func enumerateUSBDevices(fsys fs.FS, dir string) (specs []usbDevice, err error) {
 	allDevs, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		return []usbDevice{}, err
 	}
 
-	// Set up a WaitGroup with a buffered channel for results
 	var wg sync.WaitGroup
 	devs := make(chan *usbDevice)
-
-	// You could also have a shared slice with a mutex guard, but this way is arguably a little more performant.
 	for _, dev := range allDevs {
-		// Copy the loop variable
 		dev := dev
-
-		// Spawn a goroutine to discover the device information
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			result, err := queryUSBDeviceCharacteristicsByDirectory(fsys, filepath.Join(dir, dev.Name()))
 			if err != nil {
-				// do we want to handle errors here?
 				return
 			}
-			// Successful data will get thrown onto the buffered channel for later merging
 			devs <- result
 		}()
 	}
@@ -233,15 +201,13 @@ func enumerateUSBDevices(fsys fs.FS, dir string) (specs []usbDevice, err error) 
 		wg.Wait()
 	}()
 
-	// Now unwind the buffer into the results array
 	for d := range devs {
 		specs = append(specs, *d)
 	}
-
 	return
 }
 
-// searchUSBDevices returns a subset of the "devices" slice containing only those usbDevices that match the given vendor and product arguments.
+// searchUSBDevices returns a subset of devices matching the vendor, product, and serial.
 func searchUSBDevices(devices *[]usbDevice, vendor USBID, product USBID, serial string) (devs []usbDevice, err error) {
 	for _, dev := range *devices {
 		if dev.Vendor == vendor && dev.Product == product && (serial == "" || dev.Serial == serial) {
@@ -295,11 +261,7 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 		for j := uint(0); j < group.Count; j++ {
 			h := sha1.New()
 			h.Write([]byte(strconv.FormatUint(uint64(j), 10)))
-			d := device{
-				Device: &v1beta1.Device{
-					Health: v1beta1.Healthy,
-				},
-			}
+			d := device{Device: &v1beta1.Device{Health: v1beta1.Healthy}}
 			for _, path := range paths {
 				d.deviceSpecs = append(d.deviceSpecs, &v1beta1.DeviceSpec{
 					HostPath:      path.hostPath,
@@ -314,5 +276,4 @@ func (gp *GenericPlugin) discoverUSB() (devices []device, err error) {
 	}
 	return devices, nil
 }
-
 

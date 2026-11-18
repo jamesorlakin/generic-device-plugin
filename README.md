@@ -26,7 +26,7 @@ resources:
 
 The `--device` flag can be provided multiple times to allow the plugin to discover and allocate different types of resources.
 
-For USB devices, the optional `containerPath` field sets the path exposed inside the container while the host path remains the discovered USB node. This can be used to keep the container-side path stable when the USB bus/device number changes. For example:
+For USB devices, the optional `containerPath` field sets both the host and container mount paths to a stable placeholder. For example, `/dev/null` can be used so the mount remains valid without exposing the changing `/dev/bus/usb/...` path:
 ```
 --device='{"name":"usb-device","groups":[{"usb":[{"vendor":"1209","product":"000F","serial":"00000001","containerPath":"/dev/null"}]}]}'
 ```
@@ -77,7 +77,6 @@ kubectl port-forward mjpeg http
 
 Now, the MJPEG stream could be opened by pointing a browser to [http://localhost:8080/mjpeg](http://localhost:8080/mjpeg).
 
-
 ## Usage
 
 [embedmd]:# (help.txt)
@@ -99,7 +98,7 @@ Usage of generic-device-plugin:
                                   For example, to permit allocation of the FUSE device 10 times: {"name": "fuse", "groups": [{"count": 10, "paths": [{"path": "/dev/fuse"}]}]}
                                   Note: if omitted, "count" is assumed to be 1
                                   An "optional" field can be specified for individual paths to allow containers to start even when some devices are missing.
-                                  For example, to expose serial devices that may or may not be present: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyS0", "optional": true}, {"path": "/dev/ttyUSB0", "optional": true}][...]
+                                  For example, to expose serial devices that may or may not be present: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyS0", "optional": true}, {"path": "/dev/ttyUSB0", "optional": true}][...]}
                                   If mountPath is a directory, the device will be mounted to the directory with the name of the device.
                                   For example, to expose the serial devices to the /dev/serial directory: {"name": "serial", "groups": [{"paths": [{"path": "/dev/ttyUSB*", "mountPath": "/dev/serial/"}]}]}
       --domain string             The domain to use when when declaring devices. (default "devic.es")
